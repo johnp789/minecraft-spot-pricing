@@ -69,6 +69,11 @@ Parameters:
     Description: Usernames of your friends
     Default: ''
 
+  Motd:
+    Type: String
+    Description: Message of the day
+    Default: ''
+
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -89,6 +94,7 @@ Metadata:
         - AdminPlayerNames
         - Difficulty
         - Whitelist
+        - Motd
       - Label: 
           default: Optional Remote Access (SSH) Configuration
         Parameters:
@@ -116,6 +122,8 @@ Metadata:
         default: "Which difficulty?"
       Whitelist:
         default: "A comma delimited list (no spaces) of player names"
+      Motd:
+        default: "A message of the day"
       KeyPairName:
         default: "If you wish to access the instance via SSH, select a Key Pair to use. https://console.aws.amazon.com/ec2/v2/home?#KeyPairs:sort=keyName"
       YourIp:
@@ -130,6 +138,7 @@ Conditions:
   AdminPlayerNamesProvided: !Not [ !Equals [ !Ref AdminPlayerNames, '' ] ]
   DifficultyProvided: !Not [ !Equals [ !Ref Difficulty, '' ] ]
   WhitelistProvided: !Not [ !Equals [ !Ref Whitelist, '' ] ]
+  MotdProvided: !Not [ !Equals [ !Ref Motd, '' ] ]
   KeyPairNameProvided: !Not [ !Equals [ !Ref KeyPairName, '' ] ]
   IpAddressProvided: !Not [ !Equals [ !Ref YourIp, '' ] ]
   DnsConfigEnabled: !And [ !Not [ !Equals [ !Ref HostedZoneId, '' ] ], !Not [ !Equals [ !Ref RecordName, '' ] ] ]
@@ -391,6 +400,11 @@ Resources:
               - WhitelistProvided
               - Name: "WHITELIST"
                 Value: !Sub "${Whitelist}"
+              - !Ref 'AWS::NoValue'
+            - !If
+              - MotdProvided
+              - Name: "MOTD"
+                Value: !Sub "${Motd}"
               - !Ref 'AWS::NoValue'
 
   # ====================================================
