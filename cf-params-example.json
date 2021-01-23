@@ -1,0 +1,50 @@
+[
+    {
+        "ParameterKey": "ServerState",
+        "ParameterValue": "Running"
+    },
+    {
+        "ParameterKey": "Motd",
+        "ParameterValue": "We like ketchup here"
+    },
+    {
+        "ParameterKey": "Whitelist",
+        "ParameterValue": "Friend1,Friend2"
+    },
+    {
+        "ParameterKey": "AdminPlayerNames",
+        "ParameterValue": "Myself1,MyCloseFriend1"
+    },
+    {
+        "ParameterKey": "MinecraftTypeTag",
+        "ParameterValue": "PAPER"
+    },
+    {
+        "ParameterKey": "MinecraftImageTag",
+        "ParameterValue": "adopt11"
+    },
+    {
+        "ParameterKey": "Difficulty",
+        "ParameterValue": "normal"
+    },
+    {
+        "ParameterKey": "InstanceType",
+        "ParameterValue": "t3a.small"
+    },
+    {
+        "ParameterKey": "SpotPrice",
+        "ParameterValue": "0.015"
+    },
+    {
+        "ParameterKey": "YourIp",
+        "ParameterValue": "1.2.3.4"
+    },
+    {
+        "ParameterKey": "KeyPairName",
+        "ParameterValue": "someKeyPairOnAws"
+    },
+    {
+        "ParameterKey": "ResticPasswordPath",
+        "ParameterValue": "/passwords/minecraft-restic-backup"
+    }
+]

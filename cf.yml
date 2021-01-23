@@ -74,6 +74,10 @@ Parameters:
     Description: Message of the day
     Default: ''
 
+  ResticPasswordPath:
+    Type: String
+    Description: Restic Password
+
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -256,6 +260,20 @@ Resources:
       VpcId: !Ref Vpc
 
   # ====================================================
+  # S3 BUCKET FOR BACKUPS
+  # ====================================================
+  
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        RestrictPublicBuckets: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+
+  # ====================================================
   # INSTANCE CONFIG
   # ====================================================
 
@@ -299,9 +317,51 @@ Resources:
           chown 845:845 /opt/minecraft
           echo ECS_CLUSTER=${EcsCluster} >> /etc/ecs/ecs.config
 
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-MinecraftServerECS"
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp2
+              VolumeSize: '8'
+              DeleteOnTermination: 'true'
+              Encrypted: 'true'
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - InstanceProfile
+            - Arn
+        ImageId: !Ref ECSAMI
+        InstanceType: !Ref InstanceType
+        CreditSpecification: 
+          CpuCredits: standard
+        KeyName:
+          !If [ KeyPairNameProvided, !Ref KeyPairName, !Ref 'AWS::NoValue' ]
+        SecurityGroupIds:
+        - !Ref Ec2Sg
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions: 
+            InstanceInterruptionBehavior: terminate
+            MaxPrice: !If [ SpotPriceProvided, !Ref SpotPrice, !Ref 'AWS::NoValue' ]
+            SpotInstanceType: one-time
+        Monitoring:
+          Enabled: 'false'
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            yum install -y amazon-efs-utils
+            mkdir /opt/minecraft
+            mount -t efs ${Efs}:/ /opt/minecraft
+            chown 845:845 /opt/minecraft
+            echo ECS_CLUSTER=${EcsCluster} >> /etc/ecs/ecs.config
+
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     DependsOn:
+    - InternetGatewayAttachment
     - MountA
     - MountB
     Properties:
@@ -328,6 +388,7 @@ Resources:
           - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
         - PolicyName: root
           PolicyDocument:
@@ -336,6 +397,13 @@ Resources:
               - Effect: "Allow"
                 Action: "route53:*"
                 Resource: "*"
+              - Action: 's3:*'
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref S3Bucket
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -362,6 +430,8 @@ Resources:
   EcsTask:
     Type: AWS::ECS::TaskDefinition
     Properties:
+      ExecutionRoleArn: !Ref EcsTaskExecutionRole
+      TaskRoleArn: !Ref EcsTaskRole
       Volumes:
       - Host:
           SourcePath: /opt/minecraft
@@ -374,6 +444,9 @@ Resources:
           - ContainerPort: 25565
             HostPort: 25565
             Protocol: tcp
+          - ContainerPort: 25575
+            HostPort: 25575
+            Protocol: tcp
           MountPoints:
           - ContainerPath: /data
             SourceVolume: minecraft
@@ -382,7 +455,7 @@ Resources:
             - Name: "EULA"
               Value: "TRUE"
             - Name: "ENABLE_AUTOPAUSE"
-              Value: "TRUE"
+              Value: "FALSE"
             - Name: "OVERRIDE_SERVER_PROPERTIES"
               Value: "TRUE"
             - Name: "MAX_TICK_TIME"
@@ -412,6 +485,94 @@ Resources:
               - Name: "MOTD"
                 Value: !Sub "${Motd}"
               - !Ref 'AWS::NoValue'
+        - Name: minecraft-backup
+          MemoryReservation: 256
+          Hostname: !Sub "${AWS::StackName}-backup"
+          Image: "itzg/mc-backup:latest"
+          MountPoints:
+          - ContainerPath: /data
+            SourceVolume: minecraft
+            ReadOnly: true
+          Environment:
+            - Name: "SRC_DIR"
+              Value: "/data"
+            - Name: "RCON_HOST"
+              Value: "172.17.0.1"
+            - Name: "RCON_PORT"
+              Value: "25575"
+            - Name: "RCON_PASSWORD"
+              Value: "minecraft"
+            - Name: "BACKUP_METHOD"
+              Value: "restic"
+            - Name: "RESTIC_REPOSITORY"
+              Value: !Join
+                - ''
+                - - "s3:s3.amazonaws.com/"
+                  - !Ref S3Bucket
+          Secrets:
+            - Name: "RESTIC_PASSWORD"
+              ValueFrom: !Sub "${ResticPasswordPath}"
+
+  EcsTaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'ecs-tasks.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+      - PolicyName: !Sub 'EcsTaskExecutionRole-${AWS::StackName}'
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action: 'ssm:GetParameters'
+            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ResticPasswordPath}"
+
+  EcsTaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'ecs-tasks.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      Policies:
+      - PolicyName: !Sub 'EcsTaskRole-${AWS::StackName}'
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+            Resource:
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref S3Bucket
+          - Effect: Allow
+            Action:
+              - "s3:DeleteObject"
+              - "s3:GetObject"
+              - "s3:PutObject"
+            Resource:
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref S3Bucket
+                  - "/*"
 
   # ====================================================
   # SET DNS RECORD
