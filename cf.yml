@@ -74,6 +74,11 @@ Parameters:
     Description: Message of the day
     Default: ''
 
+  Memory:
+    Type: String
+    Description: Java memory-heap limit
+    Default: '1G'
+
   ResticPasswordPath:
     Type: String
     Description: Restic Password
@@ -99,6 +104,7 @@ Metadata:
         - Difficulty
         - Whitelist
         - Motd
+        - Memory
       - Label:
           default: Optional Remote Access (SSH) Configuration
         Parameters:
@@ -128,6 +134,8 @@ Metadata:
         default: "A comma delimited list (no spaces) of player names"
       Motd:
         default: "A message of the day"
+      Memory:
+        default: "Java memory-heap limit"
       KeyPairName:
         default: "If you wish to access the instance via SSH, select a Key Pair to use. https://console.aws.amazon.com/ec2/v2/home?#KeyPairs:sort=keyName"
       YourIp:
@@ -143,6 +151,7 @@ Conditions:
   DifficultyProvided: !Not [ !Equals [ !Ref Difficulty, '' ] ]
   WhitelistProvided: !Not [ !Equals [ !Ref Whitelist, '' ] ]
   MotdProvided: !Not [ !Equals [ !Ref Motd, '' ] ]
+  MemoryProvided: !Not [ !Equals [ !Ref Memory, '' ] ]
   KeyPairNameProvided: !Not [ !Equals [ !Ref KeyPairName, '' ] ]
   IpAddressProvided: !Not [ !Equals [ !Ref YourIp, '' ] ]
   DnsConfigEnabled: !And [ !Not [ !Equals [ !Ref HostedZoneId, '' ] ], !Not [ !Equals [ !Ref RecordName, '' ] ] ]
@@ -229,6 +238,7 @@ Resources:
 
   Efs:
     Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
     Properties: {}
 
   MountA:
@@ -438,7 +448,7 @@ Resources:
         Name: minecraft
       ContainerDefinitions:
         - Name: minecraft
-          MemoryReservation: 1024
+          MemoryReservation: 2500
           Image: !Sub "itzg/minecraft-server:${MinecraftImageTag}"
           PortMappings:
           - ContainerPort: 25565
@@ -484,6 +494,11 @@ Resources:
               - MotdProvided
               - Name: "MOTD"
                 Value: !Sub "${Motd}"
+              - !Ref 'AWS::NoValue'
+            - !If
+              - MemoryProvided
+              - Name: "MEMORY"
+                Value: !Sub "${Memory}"
               - !Ref 'AWS::NoValue'
         - Name: minecraft-backup
           MemoryReservation: 256
