@@ -448,7 +448,7 @@ Resources:
         Name: minecraft
       ContainerDefinitions:
         - Name: minecraft
-          MemoryReservation: 2500
+          MemoryReservation: 1024
           Image: !Sub "itzg/minecraft-server:${MinecraftImageTag}"
           PortMappings:
           - ContainerPort: 25565
